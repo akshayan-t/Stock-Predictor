@@ -1,0 +1,73 @@
+import yfinance as yf
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LinearRegression
+import matplotlib.pyplot as plt
+
+# Fetch stock data using yfinance
+stock_symbol = 'AAPL'
+stock_data = yf.download(stock_symbol, start='2015-01-01', end='2024-01-01')
+
+# Preprocess the data
+stock_data['MA50'] = stock_data['Adj Close'].rolling(window=50).mean()
+stock_data['MA200'] = stock_data['Adj Close'].rolling(window=200).mean()
+stock_data.dropna(inplace=True)
+stock_data['Target'] = stock_data['Adj Close'].shift(-1)
+stock_data.dropna(inplace=True)
+
+# Features and target
+X = stock_data[['Adj Close', 'MA50', 'MA200']]
+y = stock_data['Target']
+
+# Split the data
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
+
+# Train the model
+model = LinearRegression()
+model.fit(X_train, y_train)
+
+# Predict the next day's stock price for the test set
+predictions = model.predict(X_test)
+
+# Number of days into the future we want to predict
+future_days = 7
+
+# Use the last known data point from X_test for future predictions
+last_known_data = X_test.iloc[-1]
+
+# List to store future predictions
+future_predictions = []
+
+# Iteratively predict future stock prices for the next 'future_days'
+for i in range(future_days):
+    # Predict the next day's price
+    next_pred = model.predict([last_known_data])[0]
+    future_predictions.append(next_pred)
+    
+    # Update the last_known_data to include the new predicted price
+    new_row = {
+        'Adj Close': next_pred,  # Predicted value as "Adj Close"
+        'MA50': (last_known_data['MA50'] * 49 + next_pred) / 50,  # Update moving average (50-day)
+        'MA200': (last_known_data['MA200'] * 199 + next_pred) / 200  # Update moving average (200-day)
+    }
+    last_known_data = pd.Series(new_row)
+
+# Generate future dates for plotting (match 'future_days' exactly)
+future_dates = pd.date_range(start=y_test.index[-1], periods=future_days)
+
+# Visualize the results
+plt.figure(figsize=(10, 6))
+
+# Plot actual and predicted prices from the test data
+plt.plot(y_test.index, y_test, label='Actual Prices')
+plt.plot(y_test.index, predictions, label='Predicted Prices', linestyle='--')
+
+# Add the future predictions to the plot
+plt.plot(future_dates, future_predictions, label=f'{future_days}-Day Future Predictions', linestyle='-.', color='orange')
+
+# Set up plot title and labels
+plt.title('Stock Price Prediction vs Actual and Future Predictions')
+plt.xlabel('Date')
+plt.ylabel('Stock Price')
+plt.legend()
+plt.show()
